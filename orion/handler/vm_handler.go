@@ -95,6 +95,11 @@ func (v *VMHandler) GetType() string {
 	return "vm"
 }
 
+
+func (v *VMHandler) Init() error {
+	return nil
+}
+
 // Handle implements method of Handler.
 func (v *VMHandler) Handle(action *models.ActionImpl, actionParams map[string]interface{},
 	nodes []*models.NodeState, corrId string) *HandleResult {

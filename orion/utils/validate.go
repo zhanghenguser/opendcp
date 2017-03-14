@@ -23,7 +23,6 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/go-errors/errors"
 	"io/ioutil"
 	"path/filepath"
 	"sync"
@@ -47,19 +46,19 @@ func GetValidateUtil() *ValidateUtil {
 				path, err := filepath.Abs(tempplate_path)
 				if err != nil {
 					log.Debug("filepath abs with err:", err)
-					panic(errors.New(err))
+					panic(err)
 				}
 				fmt.Println("path:", path)
 				bytes, err := ioutil.ReadFile(path)
 				if err != nil {
 					log.Debug("ioutil ReadFile with err:", err)
-					panic(errors.New(err))
+					panic(err)
 				}
 				template := make(map[string]interface{})
 				err = json.Unmarshal(bytes, &template)
 				if err != nil {
 					log.Debug("json Unmarshal with err:", err)
-					panic(errors.New(err))
+					panic(err)
 				}
 				validate = &ValidateUtil{template: template}
 			}

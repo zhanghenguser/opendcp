@@ -1,0 +1,15 @@
+apiVersion: v1
+clusters:
+- cluster:
+    api-version: v1
+    server: http://10.86.203.96:8080
+  name: default-cluster
+contexts:
+- context:
+    cluster: default-cluster
+    user: default-admin
+  name: default-context
+current-context: default-context
+kind: Config
+preferences:
+  colors: true

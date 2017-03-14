@@ -74,6 +74,10 @@ func (h *RemoteHandler) GetType() string {
 	return "remote"
 }
 
+func (v *RemoteHandler) Init() error {
+	return nil
+}
+
 // Handle implements method of interface Handler, handles remote step.
 func (h *RemoteHandler) Handle(action *models.ActionImpl,
 	stepParams map[string]interface{}, nodes []*models.NodeState, corrId string) *HandleResult {

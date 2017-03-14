@@ -18,3 +18,7 @@ sd_appkey = 6741bc42-9e21-4763-977c-ac3a1fc0bdd8
 remote_mgr_addr = xx.xx.xx.xx:8000
 remote_command_url = /api/run
 remote_check_url =  /api/check
+
+
+k8s_master = 10.86.203.96
+k8s_config_path = ./config/k8s_config

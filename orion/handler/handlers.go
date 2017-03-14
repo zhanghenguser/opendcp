@@ -17,24 +17,31 @@
  *    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-
 package handler
 
 import (
 	. "weibo.com/opendcp/orion/models"
 	//l "github.com/astaxie/beego"
+	"github.com/astaxie/beego"
 )
 
 var (
-	remoteHandler = &RemoteHandler{}
-	sdHandler     = &ServiceDiscoveryHandler{}
-	vmHandler     = &VMHandler{}
-	handlers      = map[string]Handler{
-		"remote": remoteHandler,
-		"sd":     sdHandler,
-		"vm":     vmHandler,
+	handlers = map[string]Handler{
+		"remote": &RemoteHandler{},
+		"sd":     &ServiceDiscoveryHandler{},
+		"vm":     &VMHandler{},
 	}
 )
+
+func InitHandlers() error {
+	for key, handler := range handlers {
+		err := handler.Init()
+		if err != nil {
+			beego.Error("hanler: ", key, " init failed, err:", err)
+		}
+	}
+	return nil
+}
 
 func GetHandler(typeName string) Handler {
 	return handlers[typeName]

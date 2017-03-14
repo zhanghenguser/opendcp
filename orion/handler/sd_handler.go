@@ -79,6 +79,10 @@ type sdChkResp struct {
 	} `json:"data"`
 }
 
+func (v *ServiceDiscoveryHandler) Init() error {
+	return nil
+}
+
 func (v *ServiceDiscoveryHandler) ListAction() []models.ActionImpl {
 	return []models.ActionImpl{
 		{

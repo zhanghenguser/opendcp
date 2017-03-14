@@ -17,7 +17,6 @@
  *    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-
 package main
 
 import (
@@ -29,6 +28,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	. "weibo.com/opendcp/orion/models"
 	_ "weibo.com/opendcp/orion/routers"
+	"weibo.com/opendcp/orion/handler"
 )
 
 func main() {
@@ -44,6 +44,10 @@ func init() {
 	initOrm()
 
 	beego.SetLogger("file", `{"filename":"logs/orion.log"}`)
+
+	if err := handler.InitHandlers(); err != nil {
+		panic(err)
+	}
 }
 
 func initOrm() {
@@ -61,7 +65,7 @@ func initOrm() {
 	orm.RegisterDataBase("default", "mysql", dbUrl, dbpoolsize)
 
 	//register model
-	orm.RegisterModel(&(Cluster{}), &(Service{}), &(Pool{}), &(Node{}),&(Logs{}))
+	orm.RegisterModel(&(Cluster{}), &(Service{}), &(Pool{}), &(Node{}), &(Logs{}))
 	orm.RegisterModel(&(FlowImpl{}), &(Flow{}), &(FlowBatch{}), &(NodeState{}))
 	orm.RegisterModel(&(RemoteStep{}), &(RemoteAction{}), &(RemoteActionImpl{}))
 }

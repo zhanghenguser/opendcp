@@ -23,8 +23,8 @@ package service
 import (
 	"github.com/astaxie/beego"
 	"github.com/astaxie/beego/orm"
-	"github.com/go-errors/errors"
 	"fmt"
+	"errors"
 )
 
 type BaseService struct {

@@ -17,7 +17,6 @@
  *    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-
 package handler
 
 import (
@@ -32,6 +31,10 @@ import (
 )
 
 type MockH struct {
+}
+
+func (v *MockH) Init() error {
+	return nil
 }
 
 func (v *MockH) ListAction() []ActionImpl {

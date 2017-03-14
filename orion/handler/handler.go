@@ -17,7 +17,6 @@
  *    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-
 package handler
 
 import (
@@ -25,7 +24,7 @@ import (
 )
 
 const (
-	CODE_INIT = iota
+	CODE_INIT    = iota
 	CODE_RUNNING
 	CODE_SUCCESS
 	CODE_ERROR
@@ -38,6 +37,7 @@ type Handler interface {
 	Handle(*ActionImpl, map[string]interface{}, []*NodeState, string) *HandleResult
 	GetType() string
 	GetLog(*NodeState) string
+	Init() error
 }
 
 // NodeResult represents the result of a node handled by Handler.
