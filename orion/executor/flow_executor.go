@@ -178,6 +178,18 @@ func (exec *FlowExecutor) Create(tplID int, name string, option *ExecOption,
 }
 
 // Start starts an existing flow instance.
+func (exec *FlowExecutor) submit(poolID int, job Job) error {
+	worker := workers[poolID]
+	if worker == nil {
+		worker = NewWorker(poolID)
+		workers[poolID] = worker
+		worker.Start()
+	}
+
+	return worker.Submit(job)
+}
+
+// submit submits a job(to run flow) into queue of a pool.
 func (exec *FlowExecutor) Start(flow *models.Flow) error {
 	lock.Lock()
 	defer lock.Unlock()
@@ -210,18 +222,6 @@ func (exec *FlowExecutor) Start(flow *models.Flow) error {
 
 	// queue the job
 	return exec.submit(flow.Pool.Id, job)
-}
-
-// submit submits a job(to run flow) into queue of a pool.
-func (exec *FlowExecutor) submit(poolID int, job Job) error {
-	worker := workers[poolID]
-	if worker == nil {
-		worker = NewWorker(poolID)
-		workers[poolID] = worker
-		worker.Start()
-	}
-
-	return worker.Submit(job)
 }
 
 // Pause paused a running flow by setting its status to STOPPED.

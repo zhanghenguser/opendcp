@@ -17,7 +17,6 @@
  *    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-
 package service
 
 import (
@@ -92,7 +91,7 @@ func (b *BaseService) GetByMultiFieldValue(obj interface{}, conditions map[strin
 		qs = qs.Filter(k, v)
 	}
 
-	err := qs.One(obj)
+	err := qs.RelatedSel().One(obj)
 	if err != nil {
 		return err
 	}
@@ -149,7 +148,7 @@ func (b *BaseService) GetByMultiIds(obj interface{}, list interface{},
 	o := orm.NewOrm()
 
 	expression := field + "__in"
-	c, err := o.QueryTable(obj).Filter(expression, ids).All(list)
+	c, err := o.QueryTable(obj).Filter(expression, ids).RelatedSel().All(list)
 	if err != nil {
 		return err
 	}

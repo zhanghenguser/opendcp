@@ -1,16 +1,17 @@
 package handler
 
 import (
-	. "weibo.com/opendcp/orion/models"
-	"github.com/astaxie/beego"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
-	"k8s.io/client-go/pkg/api/v1"
+	"encoding/json"
 	"errors"
 	"time"
-	"encoding/json"
+
+	"github.com/astaxie/beego"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/pkg/apis/extensions/v1beta1"
+	"k8s.io/client-go/tools/clientcmd"
 	"weibo.com/opendcp/orion/models"
+	. "weibo.com/opendcp/orion/models"
 )
 
 const (
@@ -19,6 +20,8 @@ const (
 
 	FRESH_SD    = "fresh_sd"
 	APPEND_NODE = "append_nodes"
+
+	DEFAULT_CLUSTER = "default-cluster"
 )
 
 type KubeHandler struct {
@@ -45,8 +48,8 @@ func (k *KubeHandler) ListAction() []ActionImpl {
 			Desc: "refresh kubernetes service discovery",
 			Type: "k8s",
 			Params: map[string]interface{}{
-				"service_spec":      "String",
-				"create":            "Boolean",
+				"service_spec": "String",
+				"create":       "Boolean",
 			},
 		},
 		{
@@ -54,8 +57,8 @@ func (k *KubeHandler) ListAction() []ActionImpl {
 			Desc: "append node to pool",
 			Type: "k8s",
 			Params: map[string]interface{}{
-				"pod_spec":      "String",
-				"create":        "Boolean",
+				"pod_spec": "String",
+				"create":   "Boolean",
 			},
 		},
 	}
@@ -124,11 +127,19 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 			return Err("command not supoorted")
 		}
 	}
+	resultSet := make([]*NodeResult, len(nodes))
+
+	for i := 0; i < len(nodes); i++ {
+		resultSet[i] = &NodeResult{
+			Code: CODE_SUCCESS,
+			Data: "OK",
+		}
+	}
 
 	return &HandleResult{
 		Code:   CODE_SUCCESS,
 		Msg:    "OK",
-		Result: nil,
+		Result: resultSet,
 	}
 }
 
@@ -139,9 +150,13 @@ func (k *KubeHandler) install_node(nodes []*NodeState) {
 
 // Expose
 func (k *KubeHandler) FreshService(nodes []*NodeState, serviceSpec string, isCreate bool) error {
+	if len(nodes) == 0 {
+		return nil
+	}
+
 	poolName := nodes[0].Pool.Name
 	serviceName := nodes[0].Pool.Service.Name
-	clusterName := nodes[0].Pool.Service.Cluster.Name
+	clusterName := DEFAULT_CLUSTER
 
 	svcSpec := v1.ServiceSpec{}
 	err := json.Unmarshal([]byte(serviceSpec), &svcSpec)
@@ -188,10 +203,9 @@ func (k *KubeHandler) AppendNodes(nodes []*NodeState, podSpec string, isCreate b
 		beego.Error("json dencode template failed, err: ", err.Error())
 		return err
 	}
-
 	poolName := nodes[0].Pool.Name
 	serviceName := nodes[0].Pool.Service.Name
-	clusterName := nodes[0].Pool.Service.Cluster.Name
+	clusterName := DEFAULT_CLUSTER
 
 	err = k.checkNamespace(clusterName)
 	if err != nil {
@@ -252,15 +266,14 @@ func (k *KubeHandler) removeDeployment(clusterName, poolName string) error {
 }
 
 func (k *KubeHandler) createDeployment(clusterName, serviceName, poolName string, spec v1.PodSpec, nodeCount int) error {
-	deploy := &v1beta1.Deployment{
-	}
+	deploy := &v1beta1.Deployment{}
 	deploy.Name = poolName
 	rep := int32(nodeCount)
 	deploy.Spec.Replicas = &rep
 	deploy.Spec.Template.Spec = spec
 	deploy.Spec.Template.Labels = map[string]string{
-		"app": serviceName,
-		"pool":poolName,
+		"app":  serviceName,
+		"pool": poolName,
 	}
 
 	if _, err := k.clientSet.Deployments(clusterName).Create(deploy); err != nil {
@@ -319,7 +332,7 @@ func (k *KubeHandler) createService(clusterName, serviceName string, serviceSpec
 	service.Spec = serviceSpec
 
 	service.Spec.Selector = map[string]string{
-		"app":serviceName,
+		"app": serviceName,
 	}
 	if _, err := k.clientSet.Services(clusterName).Create(service); err != nil {
 		beego.Error("service ", serviceName, "create failed, err: ", err.Error())
@@ -340,8 +353,7 @@ func (k *KubeHandler) checkNamespace(clusterName string) error {
 	_, err := k.clientSet.Namespaces().Get(clusterName)
 	if err != nil {
 		beego.Info("namespace ", clusterName, " not found, now create")
-		newNs := &v1.Namespace{
-		}
+		newNs := &v1.Namespace{}
 		newNs.Name = clusterName
 		_, err = k.clientSet.Namespaces().Create(newNs)
 		if err != nil {
