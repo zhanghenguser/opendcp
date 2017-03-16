@@ -20,5 +20,5 @@ remote_command_url = /api/run
 remote_check_url =  /api/check
 
 
-k8s_master = 10.86.203.96
+k8s_master = 10.86.203.97
 k8s_config_path = ./config/k8s_config

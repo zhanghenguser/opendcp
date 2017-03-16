@@ -30,6 +30,7 @@ var (
 		"remote": &RemoteHandler{},
 		"sd":     &ServiceDiscoveryHandler{},
 		"vm":     &VMHandler{},
+		"k8s":    &KubeHandler{},
 	}
 )
 

@@ -9,19 +9,24 @@ import (
 	"k8s.io/client-go/pkg/api/v1"
 	"errors"
 	"time"
+	"encoding/json"
+	"weibo.com/opendcp/orion/models"
 )
 
 const (
 	TIME_WAIT = 10
 	MAX_TRY   = 20
+
+	FRESH_SD    = "fresh_sd"
+	APPEND_NODE = "append_nodes"
 )
 
 type KubeHandler struct {
 	clientSet *kubernetes.Clientset
-	actions   []ActionImpl
 }
 
 func (k *KubeHandler) Init() error {
+	//config, err := clientcmd.BuildConfigFromFlags("10.86.203.97", "./conf/k8s_config")
 	config, err := clientcmd.BuildConfigFromFlags(beego.AppConfig.String("k8s_master"), beego.AppConfig.String("k8s_config_path"))
 	if err != nil {
 		return err
@@ -34,7 +39,26 @@ func (k *KubeHandler) Init() error {
 }
 
 func (k *KubeHandler) ListAction() []ActionImpl {
-	return k.actions
+	return []models.ActionImpl{
+		{
+			Name: FRESH_SD,
+			Desc: "refresh kubernetes service discovery",
+			Type: "k8s",
+			Params: map[string]interface{}{
+				"service_spec":      "String",
+				"create":            "Boolean",
+			},
+		},
+		{
+			Name: APPEND_NODE,
+			Desc: "append node to pool",
+			Type: "k8s",
+			Params: map[string]interface{}{
+				"pod_spec":      "String",
+				"create":        "Boolean",
+			},
+		},
+	}
 }
 
 func (k *KubeHandler) GetType() string {
@@ -47,24 +71,57 @@ func (k *KubeHandler) GetLog(nodeState *NodeState) string {
 
 func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interface{}, nodes []*NodeState, corrId string) *HandleResult {
 	switch action.Name {
-	case "deploy":
+	case FRESH_SD:
 		{
-			err := k.deploy(nodes)
+			serviceSpec := ""
+			if str_obj, ok := actionParams["service_spec"]; !ok {
+				return Err("need param service_spec")
+			} else {
+				serviceSpec = str_obj.(string)
+			}
+			isCreate := true
+			if str_obj, ok := actionParams["create"]; ok {
+				isCreate = str_obj.(bool)
+			}
+
+			err := k.FreshService(nodes, serviceSpec, isCreate)
 			if err != nil {
-				return &HandleResult{
-					Code:   CODE_ERROR,
-					Msg:    err.Error(),
-					Result: nil,
-				}
+				beego.Error(err)
+				return Err(err.Error())
+			}
+
+			return &HandleResult{
+				Code:   CODE_SUCCESS,
+				Result: nil,
+			}
+		}
+	case APPEND_NODE:
+		{
+			podSpec := ""
+			if str_obj, ok := actionParams["pod_spec"]; !ok {
+				return Err("need param pod_spec")
+			} else {
+				podSpec = str_obj.(string)
+			}
+			isCreate := true
+			if str_obj, ok := actionParams["create"]; ok {
+				isCreate = str_obj.(bool)
+			}
+
+			err := k.AppendNodes(nodes, podSpec, isCreate)
+			if err != nil {
+				beego.Error(err)
+				return Err(err.Error())
+			}
+
+			return &HandleResult{
+				Code:   CODE_SUCCESS,
+				Result: nil,
 			}
 		}
 	default:
 		{
-			return &HandleResult{
-				Code:   CODE_ERROR,
-				Msg:    "command not supoorted",
-				Result: nil,
-			}
+			return Err("command not supoorted")
 		}
 	}
 
@@ -75,22 +132,80 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 	}
 }
 
-func (k *KubeHandler) deploy(nodes []*NodeState) error {
-	if len(nodes) == 0 {
-		return nil
-	}
+//@todo: not complete
+func (k *KubeHandler) install_node(nodes []*NodeState) {
+
+}
+
+// Expose
+func (k *KubeHandler) FreshService(nodes []*NodeState, serviceSpec string, isCreate bool) error {
 	poolName := nodes[0].Pool.Name
 	serviceName := nodes[0].Pool.Service.Name
-	image := nodes[0].Pool.Service.DockerImage
 	clusterName := nodes[0].Pool.Service.Cluster.Name
 
-	deploy, err := k.get_deployment(clusterName, poolName)
+	svcSpec := v1.ServiceSpec{}
+	err := json.Unmarshal([]byte(serviceSpec), &svcSpec)
+	if err != nil {
+		beego.Error("json dencode template failed, err: ", err.Error())
+		return err
+	}
+
+	err = k.checkNamespace(clusterName)
 	if err != nil {
 		return err
 	}
 
+	service := k.getService(clusterName, serviceName)
+	if service == nil {
+		if !isCreate {
+			beego.Info("service not found and will not be create, poolName: ", poolName, ", serviceName: ", serviceName)
+			return errors.New("service is not found")
+		}
+
+		beego.Info("service ", serviceName, "not found, now create")
+
+		if err := k.createService(clusterName, serviceName, svcSpec); err != nil {
+			return err
+		}
+	} else {
+		beego.Info("service ", serviceName, "already exist, now update it")
+		service.Spec = svcSpec
+		k.updateService(clusterName, service)
+	}
+
+	return nil
+}
+
+// Expose
+func (k *KubeHandler) AppendNodes(nodes []*NodeState, podSpec string, isCreate bool) error {
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	spec := v1.PodSpec{}
+	err := json.Unmarshal([]byte(podSpec), &spec)
+	if err != nil {
+		beego.Error("json dencode template failed, err: ", err.Error())
+		return err
+	}
+
+	poolName := nodes[0].Pool.Name
+	serviceName := nodes[0].Pool.Service.Name
+	clusterName := nodes[0].Pool.Service.Cluster.Name
+
+	err = k.checkNamespace(clusterName)
+	if err != nil {
+		return err
+	}
+
+	deploy := k.getDeployment(clusterName, poolName)
 	if deploy == nil {
-		if err := k.create_deployment(clusterName, serviceName, poolName, image, len(nodes)); err != nil {
+		if !isCreate {
+			beego.Info("deployment not found and will not be create, poolName: ", poolName, ", serviceName: ", serviceName)
+			return errors.New("deployment is not found")
+		}
+
+		if err := k.createDeployment(clusterName, serviceName, poolName, spec, len(nodes)); err != nil {
 			return err
 		}
 	} else {
@@ -100,24 +215,15 @@ func (k *KubeHandler) deploy(nodes []*NodeState) error {
 		}
 		newVal := int32(oldVal + len(nodes))
 		deploy.Spec.Replicas = &newVal
-		if err := k.update_deployment(clusterName, deploy); err != nil {
+		if err := k.updateDeployment(clusterName, deploy); err != nil {
 			return err
 		}
-	}
-
-	if err := k.checkService(clusterName, serviceName); err != nil {
-		return err
 	}
 
 	return nil
 }
 
-//@todo: not complete
-func (k *KubeHandler) install_node(nodes []*NodeState) {
-
-}
-
-func (k *KubeHandler) update_deployment(clusterName string, deploy *v1beta1.Deployment) error {
+func (k *KubeHandler) updateDeployment(clusterName string, deploy *v1beta1.Deployment) error {
 	_, err := k.clientSet.Deployments(clusterName).Update(deploy)
 	if err != nil {
 		beego.Error("update deployment failed, cluster: ", clusterName, ", err: ", err.Error())
@@ -126,17 +232,16 @@ func (k *KubeHandler) update_deployment(clusterName string, deploy *v1beta1.Depl
 	return nil
 }
 
-func (k *KubeHandler) get_deployment(clusterName, poolName string) (*v1beta1.Deployment, error) {
+func (k *KubeHandler) getDeployment(clusterName, poolName string) *v1beta1.Deployment {
 	ret, err := k.clientSet.Deployments(clusterName).Get(poolName)
-	if err != nil {
-		beego.Error("get deployment failed, pool: ", poolName, " cluster: ", clusterName, ", err: ", err.Error())
-		return nil, err
+	if err != nil || ret == nil {
+		return nil
 	}
-	return ret, nil
+	return ret
 }
 
 // remove deployment
-func (k *KubeHandler) remove_deployment(clusterName, poolName string) error {
+func (k *KubeHandler) removeDeployment(clusterName, poolName string) error {
 	err := k.clientSet.Deployments(clusterName).Delete(poolName, nil)
 	if err != nil {
 		beego.Error("delete deployment failed, pool: ", poolName, " cluster: ", clusterName, ", err: ", err.Error())
@@ -146,18 +251,13 @@ func (k *KubeHandler) remove_deployment(clusterName, poolName string) error {
 	return nil
 }
 
-func (k *KubeHandler) create_deployment(clusterName, serviceName, poolName, image string, nodeCount int) error {
+func (k *KubeHandler) createDeployment(clusterName, serviceName, poolName string, spec v1.PodSpec, nodeCount int) error {
 	deploy := &v1beta1.Deployment{
 	}
 	deploy.Name = poolName
 	rep := int32(nodeCount)
 	deploy.Spec.Replicas = &rep
-	deploy.Spec.Template.Spec.Containers = []v1.Container{
-		{
-			Name: serviceName,
-			Image:image,
-		},
-	}
+	deploy.Spec.Template.Spec = spec
 	deploy.Spec.Template.Labels = map[string]string{
 		"app": serviceName,
 		"pool":poolName,
@@ -198,28 +298,26 @@ func (k *KubeHandler) create_deployment(clusterName, serviceName, poolName, imag
 
 	if ready_count != 0 || deploy_error {
 		// remove deploy is have error
-		k.remove_deployment(clusterName, poolName)
+		k.removeDeployment(clusterName, poolName)
 		return errors.New("deployment init faile..")
 	}
 	return nil
 }
 
-// check service and create
-func (k *KubeHandler) checkService(clusterName, serviceName string) error {
+func (k *KubeHandler) getService(clusterName, serviceName string) *v1.Service {
 	ret, err := k.clientSet.Services(clusterName).Get(serviceName)
-	if err != nil {
-		beego.Error("get service ", serviceName, "failed, err: ", err.Error())
-		return err
-	}
-	if ret != nil {
-		beego.Info("service ", serviceName, "already exist")
+	if err != nil || ret == nil {
 		return nil
 	}
+	return ret
+}
 
-	beego.Info("service ", serviceName, "not found, now create")
-
+// check service and create
+func (k *KubeHandler) createService(clusterName, serviceName string, serviceSpec v1.ServiceSpec) error {
 	service := &v1.Service{}
 	service.Name = serviceName
+	service.Spec = serviceSpec
+
 	service.Spec.Selector = map[string]string{
 		"app":serviceName,
 	}
@@ -227,6 +325,32 @@ func (k *KubeHandler) checkService(clusterName, serviceName string) error {
 		beego.Error("service ", serviceName, "create failed, err: ", err.Error())
 		return err
 	}
+	return nil
+}
+
+func (k *KubeHandler) updateService(clusterName string, service *v1.Service) error {
+	if _, err := k.clientSet.Services(clusterName).Update(service); err != nil {
+		beego.Error("service ", service.Name, "update failed, err: ", err.Error())
+		return err
+	}
+	return nil
+}
+
+func (k *KubeHandler) checkNamespace(clusterName string) error {
+	_, err := k.clientSet.Namespaces().Get(clusterName)
+	if err != nil {
+		beego.Info("namespace ", clusterName, " not found, now create")
+		newNs := &v1.Namespace{
+		}
+		newNs.Name = clusterName
+		_, err = k.clientSet.Namespaces().Create(newNs)
+		if err != nil {
+			beego.Error("create namspace failed, cluster: ", clusterName, ", err: ", err.Error())
+			return err
+		}
+		return nil
+	}
+	beego.Info("namspace ", clusterName, " already exist")
 	return nil
 }
 
