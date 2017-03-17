@@ -64,9 +64,9 @@ func (k *KubeHandler) ListAction() []ActionImpl {
 			Desc: "append node to pool",
 			Type: "k8s",
 			Params: map[string]interface{}{
-				"pod_spec": "String",
+				"pod_spec":     "String",
 				"num":          "Interer",
-				"create":   "Boolean",
+				"create":       "Boolean",
 			},
 		},
 	}
@@ -123,7 +123,8 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 
 			num := 0
 			if num_obj, ok := actionParams["num"]; ok {
-				num = num_obj.(int)
+				numFloat := num_obj.(float64)
+				num = int(numFloat)
 			}
 
 			err := k.UpdateDp(nodes, num, podSpec, isCreate)
