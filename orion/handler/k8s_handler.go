@@ -12,7 +12,12 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"weibo.com/opendcp/orion/models"
 	. "weibo.com/opendcp/orion/models"
+	"sync"
 )
+
+/*
+ KubeHandler注意不能同时运行，毫无办法
+ */
 
 const (
 	TIME_WAIT = 10
@@ -20,12 +25,11 @@ const (
 
 	FRESH_SD    = "fresh_sd"
 	APPEND_NODE = "append_nodes"
-
-	DEFAULT_CLUSTER = "default-cluster"
 )
 
 type KubeHandler struct {
 	clientSet *kubernetes.Clientset
+	lock      sync.Mutex
 }
 
 func (k *KubeHandler) Init() error {
@@ -38,6 +42,9 @@ func (k *KubeHandler) Init() error {
 	if err != nil {
 		return err
 	}
+
+	// init lock
+	k.lock = sync.Mutex{}
 	return nil
 }
 
@@ -72,7 +79,12 @@ func (k *KubeHandler) GetLog(nodeState *NodeState) string {
 	return ""
 }
 
+//蛋疼的switch case
 func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interface{}, nodes []*NodeState, corrId string) *HandleResult {
+	//加锁防止同时运行
+	k.lock.Lock()
+	defer k.lock.Unlock()
+
 	switch action.Name {
 	case FRESH_SD:
 		{
@@ -93,10 +105,8 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 				return Err(err.Error())
 			}
 
-			return &HandleResult{
-				Code:   CODE_SUCCESS,
-				Result: nil,
-			}
+			return k.makeSuccessBack(nodes)
+
 		}
 	case APPEND_NODE:
 		{
@@ -117,16 +127,19 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 				return Err(err.Error())
 			}
 
-			return &HandleResult{
-				Code:   CODE_SUCCESS,
-				Result: nil,
-			}
+			return k.makeSuccessBack(nodes)
+
 		}
 	default:
 		{
 			return Err("command not supoorted")
 		}
 	}
+
+	return k.makeSuccessBack(nodes)
+}
+
+func (k *KubeHandler) makeSuccessBack(nodes []*NodeState) *HandleResult {
 	resultSet := make([]*NodeResult, len(nodes))
 
 	for i := 0; i < len(nodes); i++ {
@@ -144,11 +157,11 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 }
 
 //@todo: not complete
-func (k *KubeHandler) install_node(nodes []*NodeState) {
+func (k *KubeHandler) installNode(nodes []*NodeState) {
 
 }
 
-// Expose
+// 没法看的逻辑，应该单独传pool,service,cluster信息进来
 func (k *KubeHandler) FreshService(nodes []*NodeState, serviceSpec string, isCreate bool) error {
 	if len(nodes) == 0 {
 		return nil
@@ -156,7 +169,7 @@ func (k *KubeHandler) FreshService(nodes []*NodeState, serviceSpec string, isCre
 
 	poolName := nodes[0].Pool.Name
 	serviceName := nodes[0].Pool.Service.Name
-	clusterName := DEFAULT_CLUSTER
+	clusterName := nodes[0].Pool.Service.Cluster.Name
 
 	svcSpec := v1.ServiceSpec{}
 	err := json.Unmarshal([]byte(serviceSpec), &svcSpec)
@@ -191,7 +204,7 @@ func (k *KubeHandler) FreshService(nodes []*NodeState, serviceSpec string, isCre
 	return nil
 }
 
-// Expose
+// 同上
 func (k *KubeHandler) AppendNodes(nodes []*NodeState, podSpec string, isCreate bool) error {
 	if len(nodes) == 0 {
 		return nil
@@ -205,7 +218,7 @@ func (k *KubeHandler) AppendNodes(nodes []*NodeState, podSpec string, isCreate b
 	}
 	poolName := nodes[0].Pool.Name
 	serviceName := nodes[0].Pool.Service.Name
-	clusterName := DEFAULT_CLUSTER
+	clusterName := nodes[0].Pool.Service.Cluster.Name
 
 	err = k.checkNamespace(clusterName)
 	if err != nil {

@@ -91,7 +91,7 @@ func (b *BaseService) GetByMultiFieldValue(obj interface{}, conditions map[strin
 		qs = qs.Filter(k, v)
 	}
 
-	err := qs.RelatedSel().One(obj)
+	err := qs.One(obj)
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func (b *BaseService) GetByMultiIds(obj interface{}, list interface{},
 	o := orm.NewOrm()
 
 	expression := field + "__in"
-	c, err := o.QueryTable(obj).Filter(expression, ids).RelatedSel().All(list)
+	c, err := o.QueryTable(obj).Filter(expression, ids).All(list)
 	if err != nil {
 		return err
 	}

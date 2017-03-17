@@ -59,7 +59,7 @@ func (f *FlowService) GetNodeByIp(ip string) (*models.Node, error) {
 	o := orm.NewOrm()
 
 	node := &models.Node{}
-	err := o.QueryTable(node).Filter("ip", ip).RelatedSel().One(node)
+	err := o.QueryTable(node).Filter("ip", ip).One(node)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ func (f *FlowService) GetNodeStatusByFlowId(flowId int) ([]*models.NodeState, er
 
 	nodeList := make([]*models.NodeState, 0)
 
-	_, err := o.QueryTable(&models.NodeState{}).RelatedSel().Filter("Flow", flowId).All(&nodeList)
+	_, err := o.QueryTable(&models.NodeState{}).Filter("Flow", flowId).All(&nodeList)
 
 	return nodeList, err
 }

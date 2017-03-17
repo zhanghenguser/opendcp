@@ -17,7 +17,6 @@
  *    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
  */
 
-
 package executor
 
 import (
@@ -37,9 +36,9 @@ import (
 
 var (
 	// Executor is the singleton FlowExecutor instance to run all tasks.
-	Executor = &FlowExecutor{}
+	Executor    = &FlowExecutor{}
 	flowService = service.Flow
-	logService = service.Logs
+	logService  = service.Logs
 
 	// Default retry option
 	dftRetryOpt = &models.RetryOption{
@@ -58,6 +57,11 @@ const (
 	retryInterval = 5
 )
 
+type NodeStates struct {
+	Nodes []*models.NodeState
+	Pool  models.Pool
+}
+
 // ExecOption contains options to execute a task.
 type ExecOption struct {
 	// MaxNum is the max num of nodes in one batch.
@@ -72,17 +76,17 @@ type FlowExecutor struct {
 // Run creates a flow instance from the given template id, and nodes, and
 // starts the flow instance.
 func (exec *FlowExecutor) Run(tplID int, name string, option *ExecOption,
-	nodes []*models.Node,context map[string]interface{}) error {
+	nodes []*models.Node, context map[string]interface{}) error {
 
 	fis, err := exec.Create(tplID, name, option, nodes, context)
 	if err != nil {
 		return err
 	}
 
-	for _, fi  := range fis{
+	for _, fi := range fis {
 		ins := fi
 		err = exec.Start(ins)
-		if err  != nil{
+		if err != nil {
 			return err
 		}
 	}
@@ -130,7 +134,7 @@ func (exec *FlowExecutor) Create(tplID int, name string, option *ExecOption,
 	}
 
 	//merge override params with params
-	overrideParams, ok:= context["overrideParams"].(map[string]interface{})
+	overrideParams, ok := context["overrideParams"].(map[string]interface{})
 	if !ok {
 		beego.Error("bad overrideParams:", context["overrideParams"])
 		return nil, errors.New("bad overrideParams!")
@@ -149,8 +153,7 @@ func (exec *FlowExecutor) Create(tplID int, name string, option *ExecOption,
 		return nil, errors.New("bad opUser!")
 	}
 
-
-	for pid, node := range nodesarray{
+	for pid, node := range nodesarray {
 		poolID := pid
 		poolNode := node
 		instance, err := exec.createFlowInstance(name, flow, &models.Pool{Id: poolID}, stepOps, option, opUser)
@@ -194,13 +197,13 @@ func (exec *FlowExecutor) Start(flow *models.Flow) error {
 	lock.Lock()
 	defer lock.Unlock()
 
-	correlationId := exec.getCorrelationId(flow.Id,0)
+	correlationId := exec.getCorrelationId(flow.Id, 0)
 
 	if !exec.isFlowInState(flow, models.STATUS_INIT) &&
 		!exec.isFlowInState(flow, models.STATUS_STOPPED) {
 
 		logInfo := "Flow " + flow.Name + " is not in state init/stopped: " + strconv.Itoa(flow.Status)
-		logService.Info(flow.Id,0,correlationId,logInfo)
+		logService.Info(flow.Id, 0, correlationId, logInfo)
 
 		return errors.New(logInfo)
 	}
@@ -209,11 +212,11 @@ func (exec *FlowExecutor) Start(flow *models.Flow) error {
 
 	// run the flow
 	job := func() error {
-		logService.Info(flow.Id,0,correlationId,"Run flow...")
+		logService.Info(flow.Id, 0, correlationId, "Run flow...")
 
 		err := exec.runFlow(flow)
 		if err != nil {
-			logService.Error(flow.Id,0,correlationId,"Run flow error",err)
+			logService.Error(flow.Id, 0, correlationId, "Run flow error", err)
 			return err
 		}
 
@@ -294,29 +297,30 @@ func (exec *FlowExecutor) isRunning(flow *models.Flow) bool {
 	return exec.isFlowInState(flow, models.STATUS_RUNNING)
 }
 
+//这里写的太蛋疼了，谁来改掉
 // run the task by batches.
 func (exec *FlowExecutor) runFlow(flow *models.Flow) error {
-	correlationId := exec.getCorrelationId(flow.Id,0)
+	correlationId := exec.getCorrelationId(flow.Id, 0)
 
-	logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Start running flow[%s,%d]",flow.Name,flow.Id))
-	defer func (){
-		logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Finish running flow[%s,%d]",flow.Name,flow.Id))
+	logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Start running flow[%s,%d]", flow.Name, flow.Id))
+	defer func() {
+		logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Finish running flow[%s,%d]", flow.Name, flow.Id))
 	}()
 
 	if !exec.isRunning(flow) {
-		logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Flow %s %d state =%d not in running state, ignore",flow.Name,flow.Id,flow.Status))
+		logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Flow %s %d state =%d not in running state, ignore", flow.Name, flow.Id, flow.Status))
 		return nil
 	}
 
 	// get all steps
 	steps, stepOps, err := exec.getSteps(flow)
 	if err != nil {
-		logService.Error(flow.Id,0,correlationId,"Get steps fails: " + err.Error())
+		logService.Error(flow.Id, 0, correlationId, "Get steps fails: "+err.Error())
 		return err
 	}
 
 	// load batches
-	logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Load batches for flow name:%s,id:%d" , flow.Name ,flow.Id))
+	logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Load batches for flow name:%s,id:%d", flow.Name, flow.Id))
 
 	var batches []*models.FlowBatch
 	flowService.ListByPageWithFilter(0, 1000, models.FlowBatch{}, &batches, "Flow", flow.Id)
@@ -324,7 +328,7 @@ func (exec *FlowExecutor) runFlow(flow *models.Flow) error {
 		batch.Flow = flow
 	}
 
-	logService.Info(flow.Id,0,correlationId,fmt.Sprintf("There are %d batches for flow %s",len(batches),flow.Name))
+	logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("There are %d batches for flow %s", len(batches), flow.Name))
 
 	// load node states
 	idStateMap, err := exec.loadNodeStates(flow)
@@ -332,33 +336,46 @@ func (exec *FlowExecutor) runFlow(flow *models.Flow) error {
 		return err
 	}
 
+	//load pool, service, cluster info
+	for _, n := range idStateMap {
+		if err := flowService.GetBy(n.Pool, "id"); err != nil {
+			return err
+		}
+		if err := flowService.GetBy(n.Pool.Service, "id"); err != nil {
+			return err
+		}
+		if err := flowService.GetBy(n.Pool.Service.Cluster, "id"); err != nil {
+			return err
+		}
+	}
+
 	// execute flow by batch
 	for i, batch := range batches {
-		correlationId = exec.getCorrelationId(flow.Id,batch.Id)
+		correlationId = exec.getCorrelationId(flow.Id, batch.Id)
 
-		logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Execute batch %d of flow %s ",i+1,flow.Name))
+		logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Execute batch %d of flow %s ", i+1, flow.Name))
 
 		if !exec.isRunning(flow) {
-			logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Flow %s %d state =%d not in running state, ignore",flow.Name,flow.Id,flow.Status))
+			logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Flow %s %d state =%d not in running state, ignore", flow.Name, flow.Id, flow.Status))
 			return nil
 		}
 
 		switch batch.Status {
 		case models.STATUS_SUCCESS, models.STATUS_FAILED:
-			logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Batch %d already finished with status %d , skip",i+1,batch.Status))
+			logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Batch %d already finished with status %d , skip", i+1, batch.Status))
 			continue
 		case models.STATUS_INIT:
-			logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Batch %d not stated yet, start",i+1))
+			logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Batch %d not stated yet, start", i+1))
 
 			err = exec.runBatch(batch, idStateMap, steps, stepOps)
 		case models.STATUS_RUNNING:
-			logService.Info(flow.Id,0,correlationId,fmt.Sprintf("Batch %d already running, rerun",i+1))
+			logService.Info(flow.Id, 0, correlationId, fmt.Sprintf("Batch %d already running, rerun", i+1))
 
 			err = exec.runBatch(batch, idStateMap, steps, stepOps)
 		}
 
 		if err != nil {
-			logService.Error(flow.Id,0,correlationId,fmt.Sprintf("Batch %d fails:",i+1),err)
+			logService.Error(flow.Id, 0, correlationId, fmt.Sprintf("Batch %d fails:", i+1), err)
 
 			exec.setFlowStatus(flow, models.STATUS_FAILED)
 			return err
@@ -374,14 +391,13 @@ func (exec *FlowExecutor) runBatch(batch *models.FlowBatch, stateMap map[int]*mo
 	steps []*models.ActionImpl, stepOptions []*models.StepOption) error {
 
 	fid := batch.Flow.Id
-	correlationId := exec.getCorrelationId(fid,batch.Id)
+	correlationId := exec.getCorrelationId(fid, batch.Id)
 
-	logService.Info(fid,batch.Id,correlationId,fmt.Sprintf("Run batch, flow:%s batchId:%d", batch.Flow.Name,batch.Id))
+	logService.Info(fid, batch.Id, correlationId, fmt.Sprintf("Run batch, flow:%s batchId:%d", batch.Flow.Name, batch.Id))
 
-	defer func (){
-		logService.Info(fid,batch.Id,correlationId,fmt.Sprintf("Finish run batch, flow:%s batchId:%d", batch.Flow.Name,batch.Id))
+	defer func() {
+		logService.Info(fid, batch.Id, correlationId, fmt.Sprintf("Finish run batch, flow:%s batchId:%d", batch.Flow.Name, batch.Id))
 	}()
-
 
 	// load nodes & node states
 	states, err := exec.getBatchNodeStates(batch, stateMap)
@@ -389,16 +405,16 @@ func (exec *FlowExecutor) runBatch(batch *models.FlowBatch, stateMap map[int]*mo
 		return err
 	}
 
-	logService.Debug(fid,batch.Id,correlationId,fmt.Sprintf("Batch[%d] contains %d nodes", batch.Id, len(states)))
+	logService.Debug(fid, batch.Id, correlationId, fmt.Sprintf("Batch[%d] contains %d nodes", batch.Id, len(states)))
 
 	all := states
 	for i, step := range steps {
-		logService.Debug(fid,batch.Id,correlationId,fmt.Sprintf("Run step %s of batch[%d]",step.Name,batch.Id))
+		logService.Debug(fid, batch.Id, correlationId, fmt.Sprintf("Run step %s of batch[%d]", step.Name, batch.Id))
 
 		// run step using handler
 		handler := handler.GetHandler(step.Type)
 		if handler == nil {
-			logService.Error(fid,batch.Id,correlationId,fmt.Sprintf("Handler not found for type %s", step.Type))
+			logService.Error(fid, batch.Id, correlationId, fmt.Sprintf("Handler not found for type %s", step.Type))
 
 			exec.allFailed(batch, step, all)
 			return errors.New("handler not found for type[" + step.Type + "]")
@@ -414,6 +430,7 @@ func (exec *FlowExecutor) runBatch(batch *models.FlowBatch, stateMap map[int]*mo
 			retryOption = dftRetryOpt
 		}
 
+
 		// use flow-batch id as correlation id
 		correlationId := exec.getCorrelationId(batch.Flow.Id, batch.Id)
 
@@ -421,7 +438,7 @@ func (exec *FlowExecutor) runBatch(batch *models.FlowBatch, stateMap map[int]*mo
 
 		// if all nodes fail in this batch, then we assume this task fails
 		if len(all) == 0 {
-			logService.Error(fid,batch.Id,correlationId,fmt.Sprintf("Flow %s fails at batch[%d] step[%s]", batch.Flow.Name,batch.Id,step.Name))
+			logService.Error(fid, batch.Id, correlationId, fmt.Sprintf("Flow %s fails at batch[%d] step[%s]", batch.Flow.Name, batch.Id, step.Name))
 
 			exec.allFailed(batch, step, all)
 			return errors.New("Fail at step " + step.Name)
@@ -438,17 +455,16 @@ func (exec *FlowExecutor) runStep(h handler.Handler, step *models.ActionImpl,
 	nstates []*models.NodeState, stepParams map[string]interface{},
 	retryOption *models.RetryOption, correlationId string) ([]*models.NodeState, []*models.NodeState) {
 
-	paramsBytes , _ := json.Marshal(stepParams)
+	paramsBytes, _ := json.Marshal(stepParams)
 	paramsJson := string(paramsBytes)
 
 	fid := nstates[0].Flow.Id
 	batchId := nstates[0].Batch.Id
 
-	logService.Debug(fid,batchId,correlationId,fmt.Sprintf("Start running step %s params: %s",step.Name, paramsJson))
-	defer func (){
-		logService.Debug(fid,batchId,correlationId,fmt.Sprintf("Finish running step %s",step.Name))
+	logService.Debug(fid, batchId, correlationId, fmt.Sprintf("Start running step %s params: %s", step.Name, paramsJson))
+	defer func() {
+		logService.Debug(fid, batchId, correlationId, fmt.Sprintf("Finish running step %s", step.Name))
 	}()
-
 
 	exec.updateStepStatus(nstates, step.Name, models.STATUS_RUNNING)
 
@@ -460,7 +476,7 @@ func (exec *FlowExecutor) runStep(h handler.Handler, step *models.ActionImpl,
 			time.Sleep(retryInterval * time.Second)
 		}
 
-		logService.Debug(fid,batchId,correlationId,fmt.Sprintf("Run step %s for %d times",step.Name, i+1))
+		logService.Debug(fid, batchId, correlationId, fmt.Sprintf("Run step %s for %d times", step.Name, i+1))
 
 		result := h.Handle(step, stepParams, toRun, correlationId)
 
@@ -468,7 +484,7 @@ func (exec *FlowExecutor) runStep(h handler.Handler, step *models.ActionImpl,
 		if result.Code == handler.CODE_ERROR {
 			errNodes = toRun
 			msg := fmt.Sprintf("Fail to run step [%s]: %s", step.Name, result.Msg)
-			logService.Error(fid,batchId,correlationId,msg)
+			logService.Error(fid, batchId, correlationId, msg)
 
 			continue
 		}
@@ -478,7 +494,7 @@ func (exec *FlowExecutor) runStep(h handler.Handler, step *models.ActionImpl,
 		if results == nil {
 			errNodes = toRun
 			msg := fmt.Sprintf("Node results is empty for [%s]", step.Name)
-			logService.Error(fid,batchId,correlationId,msg)
+			logService.Error(fid, batchId, correlationId, msg)
 
 			continue
 		}
@@ -489,13 +505,13 @@ func (exec *FlowExecutor) runStep(h handler.Handler, step *models.ActionImpl,
 			node := state.Node
 			nr := results[i]
 			if nr == nil {
-				logService.Warn(fid,batchId,correlationId,fmt.Sprintf("Result for node %d %s missing, set it as failed",node.Id, node.Ip))
+				logService.Warn(fid, batchId, correlationId, fmt.Sprintf("Result for node %d %s missing, set it as failed", node.Id, node.Ip))
 
 				state.Status = models.STATUS_FAILED
 				state.Log += step.Name + ":" + "<Missing result>\n"
 				errNodes = append(errNodes, state)
 			} else {
-				logService.Debug(fid,batchId,correlationId,fmt.Sprintf("Result for node [%d %s] is %d %s", node.Id, node.Ip,nr.Code, nr.Data))
+				logService.Debug(fid, batchId, correlationId, fmt.Sprintf("Result for node [%d %s] is %d %s", node.Id, node.Ip, nr.Code, nr.Data))
 
 				if nr.Code == models.STATUS_SUCCESS {
 					okNodes = append(okNodes, state)
@@ -513,7 +529,7 @@ func (exec *FlowExecutor) runStep(h handler.Handler, step *models.ActionImpl,
 
 			err := flowService.UpdateBase(state)
 			if err != nil {
-				logService.Error(fid,batchId,correlationId,fmt.Sprintf("Fail to update state for node[%d %s]", node.Id, node.Ip))
+				logService.Error(fid, batchId, correlationId, fmt.Sprintf("Fail to update state for node[%d %s]", node.Id, node.Ip))
 			}
 		}
 
@@ -663,7 +679,7 @@ func (exec *FlowExecutor) getBatchNodeStates(batch *models.FlowBatch,
  * Create a flow instance in DB, set its state to INIT
  */
 func (exec *FlowExecutor) createFlowInstance(name string, flow *models.FlowImpl, pool *models.Pool,
-	stepOps []*models.StepOption, option *ExecOption,opUser string) (*models.Flow, error) {
+	stepOps []*models.StepOption, option *ExecOption, opUser string) (*models.Flow, error) {
 
 	bytes, err := json.Marshal(stepOps)
 	if err != nil {
@@ -730,7 +746,7 @@ func (exec *FlowExecutor) createBatches(instance *models.Flow, states []*models.
 	}
 
 	for i := 0; i < batchNum; i++ {
-		start, end := i*max, i*max+max
+		start, end := i * max, i*max + max
 		if end > total {
 			end = total
 		}
@@ -842,6 +858,6 @@ func (exec *FlowExecutor) mergeParams(options []*models.StepOption,
 	}
 }
 
-func (exec *FlowExecutor) getCorrelationId(fid int, batchId int) string{
-	return utils.GetCorrelationId(fid,batchId)
+func (exec *FlowExecutor) getCorrelationId(fid int, batchId int) string {
+	return utils.GetCorrelationId(fid, batchId)
 }
