@@ -23,8 +23,8 @@ const (
 	TIME_WAIT = 10
 	MAX_TRY   = 20
 
-	FRESH_SD    = "fresh_sd"
-	APPEND_NODE = "append_nodes"
+	UPDATE_SERVICE    = "update_svc"
+	UPDATE_DEPLOYMENT = "update_dp"
 )
 
 type KubeHandler struct {
@@ -51,7 +51,7 @@ func (k *KubeHandler) Init() error {
 func (k *KubeHandler) ListAction() []ActionImpl {
 	return []models.ActionImpl{
 		{
-			Name: FRESH_SD,
+			Name: UPDATE_SERVICE,
 			Desc: "refresh kubernetes service discovery",
 			Type: "k8s",
 			Params: map[string]interface{}{
@@ -60,11 +60,12 @@ func (k *KubeHandler) ListAction() []ActionImpl {
 			},
 		},
 		{
-			Name: APPEND_NODE,
+			Name: UPDATE_DEPLOYMENT,
 			Desc: "append node to pool",
 			Type: "k8s",
 			Params: map[string]interface{}{
 				"pod_spec": "String",
+				"num":          "Interer",
 				"create":   "Boolean",
 			},
 		},
@@ -86,7 +87,7 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 	defer k.lock.Unlock()
 
 	switch action.Name {
-	case FRESH_SD:
+	case UPDATE_SERVICE:
 		{
 			serviceSpec := ""
 			if str_obj, ok := actionParams["service_spec"]; !ok {
@@ -99,16 +100,15 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 				isCreate = str_obj.(bool)
 			}
 
-			err := k.FreshService(nodes, serviceSpec, isCreate)
+			err := k.UpdateSvc(nodes, serviceSpec, isCreate)
 			if err != nil {
 				beego.Error(err)
 				return Err(err.Error())
 			}
 
 			return k.makeSuccessBack(nodes)
-
 		}
-	case APPEND_NODE:
+	case UPDATE_DEPLOYMENT:
 		{
 			podSpec := ""
 			if str_obj, ok := actionParams["pod_spec"]; !ok {
@@ -121,7 +121,12 @@ func (k *KubeHandler) Handle(action *ActionImpl, actionParams map[string]interfa
 				isCreate = str_obj.(bool)
 			}
 
-			err := k.AppendNodes(nodes, podSpec, isCreate)
+			num := 0
+			if num_obj, ok := actionParams["num"]; ok {
+				num = num_obj.(int)
+			}
+
+			err := k.UpdateDp(nodes, num, podSpec, isCreate)
 			if err != nil {
 				beego.Error(err)
 				return Err(err.Error())
@@ -162,7 +167,7 @@ func (k *KubeHandler) installNode(nodes []*NodeState) {
 }
 
 // 没法看的逻辑，应该单独传pool,service,cluster信息进来
-func (k *KubeHandler) FreshService(nodes []*NodeState, serviceSpec string, isCreate bool) error {
+func (k *KubeHandler) UpdateSvc(nodes []*NodeState, serviceSpec string, isCreate bool) error {
 	if len(nodes) == 0 {
 		return nil
 	}
@@ -205,7 +210,7 @@ func (k *KubeHandler) FreshService(nodes []*NodeState, serviceSpec string, isCre
 }
 
 // 同上
-func (k *KubeHandler) AppendNodes(nodes []*NodeState, podSpec string, isCreate bool) error {
+func (k *KubeHandler) UpdateDp(nodes []*NodeState, num int, podSpec string, isCreate bool) error {
 	if len(nodes) == 0 {
 		return nil
 	}
@@ -232,7 +237,7 @@ func (k *KubeHandler) AppendNodes(nodes []*NodeState, podSpec string, isCreate b
 			return errors.New("deployment is not found")
 		}
 
-		if err := k.createDeployment(clusterName, serviceName, poolName, spec, len(nodes)); err != nil {
+		if err := k.createDeployment(clusterName, serviceName, poolName, spec, num); err != nil {
 			return err
 		}
 	} else {
